@@ -40,6 +40,7 @@ from initial_params_tab import InitialParametersTab
 from results_tab import ResultsTab
 from test_check_tab import TestCheckTab
 from measurable_tab import MeasurableParametersTab
+from debug_data_tab import DebugDataTab
 
 BASE_DIR = Path(__file__).parent
 
@@ -155,12 +156,14 @@ class MainWindow(QMainWindow):
         self.initial_params_tab = InitialParametersTab()
         self.test_check_tab = TestCheckTab(db_path=DB_PATH)
         self.results_tab = ResultsTab()
+        self.debug_data_tab = DebugDataTab()
 
         self.tabs.addTab(self.dashboard_tab, "📊 Dashboard")
         self.tabs.addTab(self.measurable_tab, "📐 Measurable Params")
         self.tabs.addTab(self.initial_params_tab, "🧪 Initial Params")
         self.tabs.addTab(self.test_check_tab, "✅ Test Parameter Check")
         self.tabs.addTab(self.results_tab, "📈 Results")
+        self.tabs.addTab(self.debug_data_tab, "🐞 Debug & Raw Data")
 
         main_v.addWidget(self.tabs, stretch=1)
 
@@ -243,6 +246,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", "Could not parse the file.\n\n" + "\n".join(logs))
             return None
 
+        df_raw = df.copy()  # exactly as loaded — before any normalization/cleaning
+
         df = normalize_columns(df, logs)
         df = parse_time(df, logs)
         df = clean_and_drop(df, logs)
@@ -252,6 +257,7 @@ class MainWindow(QMainWindow):
             df["Overall_Efficiency_gW"] = (
                 (df["Thrust"] * 101.972) / p_elec
             ).replace([np.inf, -np.inf], np.nan)
+            logs.append("✅ Added Overall_Efficiency_gW column")
 
         if df.empty:
             QMessageBox.warning(self, "Empty data", "DataFrame is empty after cleaning.")
@@ -272,6 +278,7 @@ class MainWindow(QMainWindow):
         self.initial_params_tab.load_run(df, filename, saved_ip)
         self.results_tab.load_run(df, filename, saved_rp)
         self.test_check_tab.load_run(filename, saved_tpc)
+        self.debug_data_tab.load_run(df, df_raw, logs)
 
         self.statusBar().showMessage(f"Loaded {filename} — {len(df):,} rows", 5000)
         return df
