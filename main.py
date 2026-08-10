@@ -164,13 +164,19 @@ class MainWindow(QMainWindow):
         self.plots_tab = PlotsTab()
         self.pdf_tab = PdfTab(generate_callback=self._generate_pdf_data)
 
+        # Plot Builder now lives inside the Dashboard tab (below the Thrust
+        # plot) instead of being its own top-level tab. self.plots_tab still
+        # exists as a normal widget/instance — load_run() and
+        # get_saved_plots() below are unaffected — it's just embedded rather
+        # than added via addTab().
+        self.dashboard_tab.embed_plot_builder(self.plots_tab)
+
         self.tabs.addTab(self.dashboard_tab, "📊 Dashboard")
         self.tabs.addTab(self.measurable_tab, "📐 Measurable Params")
         self.tabs.addTab(self.initial_params_tab, "🧪 Initial Params")
         self.tabs.addTab(self.test_check_tab, "✅ Test Parameter Check")
         self.tabs.addTab(self.results_tab, "📈 Results")
         self.tabs.addTab(self.debug_data_tab, "🐞 Debug & Raw Data")
-        self.tabs.addTab(self.plots_tab, "📉 Plot Builder")
         self.tabs.addTab(self.pdf_tab, "📄 PDF Report")
 
         main_v.addWidget(self.tabs, stretch=1)

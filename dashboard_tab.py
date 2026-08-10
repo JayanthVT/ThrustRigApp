@@ -11,10 +11,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame,
     QSpinBox, QGroupBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import Qt
 
-from python_functions.charts import pl_single
 from card_style import metric_card
 
 
@@ -85,32 +83,36 @@ class DashboardTab(QWidget):
 
         root.addWidget(lookup_box)
 
-        # ── Thrust plot (proves charts.py / plotly reuse works) ──
-        self.plot_view = QWebEngineView()
-        self.plot_view.setMinimumHeight(380)
-        root.addWidget(self.plot_view)
-
+        # Plot Builder gets embedded directly here via embed_plot_builder()
+        # (called from main.py once both tabs exist) — it replaced the old
+        # fixed Thrust-vs-Time chart that used to live in this spot, since
+        # Plot Builder already covers that same "Thrust vs Time" case (just
+        # pick Time/Thrust as axes) plus everything else, so keeping both
+        # was redundant and the old one left an empty gap on logs with no
+        # Thrust column.
         root.addStretch()
         self._render_placeholder()
-        # QWebEngineView's Chromium process isn't fully initialized the instant
-        # the widget is constructed (before the window is shown) — a setHtml()
-        # call made synchronously here can silently get dropped. Deferring by
-        # one event-loop tick lets it finish initializing first. This is what
-        # caused the Thrust chart not to appear on the very first import right
-        # after launching the app.
-        QTimer.singleShot(0, self._set_plot_placeholder)
 
-    def _set_plot_placeholder(self):
-        """Dark empty page instead of QWebEngineView's default white background."""
-        self.plot_view.setHtml(
-            "<html><body style='background:#0d0f14; margin:0;'></body></html>"
+    def embed_plot_builder(self, plots_widget: QWidget):
+        """Embed the Plot Builder tab's widget directly into the Dashboard,
+        right below RPM Lookup. Call once, after both DashboardTab and the
+        PlotsTab instance exist."""
+        layout = self.layout()
+        last_index = layout.count() - 1
+        layout.takeAt(last_index)  # drop the trailing addStretch() spacer
+
+        sep = QLabel("📉 Plot Builder")
+        sep.setStyleSheet(
+            "font-size:16px; font-weight:600; color:#e0e0e0; margin-top:10px;"
         )
+        layout.addWidget(sep)
+        layout.addWidget(plots_widget)
+        layout.addStretch()
 
     # ── Public API ──────────────────────────────────────────
     def load_dataframe(self, df: pd.DataFrame):
         self.df = df
         self._render_metrics()
-        self._render_plot()
         if "RPM" in df.columns and not df.empty:
             peak_rpm = int(df["RPM"].max())
             self.rpm_spin.setMaximum(peak_rpm)
@@ -209,22 +211,3 @@ class DashboardTab(QWidget):
             "Motor / ESC Temp",
             f"{lmt:.1f} / {let:.1f} °C" if (lmt is not None and let is not None) else "—"))
         self.lookup_row.addStretch()
-
-    def _render_plot(self):
-        """Reuses charts.pl_single() UNCHANGED — proves the Plotly logic ports as-is."""
-        df = self.df
-        if "Thrust" not in df.columns or "Time" not in df.columns:
-            self._set_plot_placeholder()
-            return
-        fig = pl_single(df, "Thrust", "#f97316", "Thrust", "N", "Thrust vs Time")
-        fig.update_layout(paper_bgcolor="#0d0f14", plot_bgcolor="#0d0f14")
-        chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False)
-        html = f"""
-        <html>
-        <head><style>
-            html, body {{ background:#0d0f14; margin:0; padding:0; }}
-        </style></head>
-        <body>{chart_html}</body>
-        </html>
-        """
-        self.plot_view.setHtml(html)

@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 
 class PdfTab(QWidget):
@@ -51,6 +52,13 @@ class PdfTab(QWidget):
 
         self.preview = QWebEngineView()
         self.preview.setMinimumHeight(600)
+        # Chromium's built-in PDF viewer is OFF by default in QtWebEngine —
+        # without this, setUrl() on a local .pdf file just triggers a silent
+        # download instead of rendering it, so the placeholder never gets
+        # replaced even though the file was generated successfully.
+        self.preview.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.PdfViewerEnabled, True
+        )
         root.addWidget(self.preview, stretch=1)
         self._show_placeholder()
 
@@ -79,12 +87,26 @@ class PdfTab(QWidget):
         self.suggested_filename = suggested_filename or "report.pdf"
         self.download_btn.setEnabled(True)
 
-        # Write to a temp file and load it — QWebEngineView renders PDFs
-        # natively via Chromium's built-in viewer when given a file:// URL.
+        # Write to a temp file, then load it wrapped in an <embed> tag rather
+        # than navigating straight to the file:// URL. Chromium treats a
+        # *direct* navigation to a local PDF as a download request — even
+        # with PdfViewerEnabled on — and silently cancels the page load, so
+        # nothing ever renders even though the file itself is fine. Loading
+        # an HTML page that embeds the PDF avoids that path and renders it
+        # inline via the same built-in PDF viewer. (Verified: direct setUrl
+        # fires loadFinished(False) + downloadRequested; this approach fires
+        # loadFinished(True) with no download.)
         tmp_dir = Path(tempfile.gettempdir())
         self._temp_pdf_path = tmp_dir / "thrust_dashboard_preview.pdf"
         self._temp_pdf_path.write_bytes(pdf_bytes)
-        self.preview.setUrl(QUrl.fromLocalFile(str(self._temp_pdf_path)))
+        file_url = QUrl.fromLocalFile(str(self._temp_pdf_path)).toString()
+        html = (
+            "<html><body style='margin:0;'>"
+            f"<embed src='{file_url}' type='application/pdf' "
+            "width='100%' height='100%' style='border:none;'>"
+            "</body></html>"
+        )
+        self.preview.setHtml(html, baseUrl=QUrl.fromLocalFile(str(tmp_dir) + "/"))
 
         self.status_label.setText(
             f"✅ Report ready — {len(pdf_bytes) / 1024:.0f} KB. "
