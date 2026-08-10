@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QFileDialog,
@@ -41,6 +42,9 @@ from results_tab import ResultsTab
 from test_check_tab import TestCheckTab
 from measurable_tab import MeasurableParametersTab
 from debug_data_tab import DebugDataTab
+from plots_tab import PlotsTab
+from pdf_tab import PdfTab
+from pdf_engine import build_pdf_report
 
 BASE_DIR = Path(__file__).parent
 
@@ -157,6 +161,8 @@ class MainWindow(QMainWindow):
         self.test_check_tab = TestCheckTab(db_path=DB_PATH)
         self.results_tab = ResultsTab()
         self.debug_data_tab = DebugDataTab()
+        self.plots_tab = PlotsTab()
+        self.pdf_tab = PdfTab(generate_callback=self._generate_pdf_data)
 
         self.tabs.addTab(self.dashboard_tab, "📊 Dashboard")
         self.tabs.addTab(self.measurable_tab, "📐 Measurable Params")
@@ -164,6 +170,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.test_check_tab, "✅ Test Parameter Check")
         self.tabs.addTab(self.results_tab, "📈 Results")
         self.tabs.addTab(self.debug_data_tab, "🐞 Debug & Raw Data")
+        self.tabs.addTab(self.plots_tab, "📉 Plot Builder")
+        self.tabs.addTab(self.pdf_tab, "📄 PDF Report")
 
         main_v.addWidget(self.tabs, stretch=1)
 
@@ -184,6 +192,7 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Ready")
         self.current_filename = None
+        self.current_df = None
         self._refresh_library()
 
     # ── Library sidebar ─────────────────────────────────────
@@ -264,6 +273,7 @@ class MainWindow(QMainWindow):
             return None
 
         self.current_filename = filename
+        self.current_df = df
         self.update_btn.setEnabled(True)
         self.save_status.setText("")
 
@@ -279,6 +289,12 @@ class MainWindow(QMainWindow):
         self.results_tab.load_run(df, filename, saved_rp)
         self.test_check_tab.load_run(filename, saved_tpc)
         self.debug_data_tab.load_run(df, df_raw, logs)
+        self.plots_tab.load_run(df, filename)
+        self.pdf_tab._show_placeholder()
+        self.pdf_tab.download_btn.setEnabled(False)
+        self.pdf_tab.status_label.setText(
+            "Click \"Refresh Preview\" to generate a report from the current run."
+        )
 
         self.statusBar().showMessage(f"Loaded {filename} — {len(df):,} rows", 5000)
         return df
@@ -302,6 +318,88 @@ class MainWindow(QMainWindow):
         update_result_params(self.current_filename, self.results_tab.get_values(), db_path=DB_PATH)
         self.save_status.setText("✅ Saved.")
         self.statusBar().showMessage("Parameters updated.", 4000)
+
+    def _generate_pdf_data(self):
+        """Port of view_plots.render_downloads()'s pdf_data assembly.
+        Returns (pdf_bytes, suggested_filename) or (None, None) if nothing loaded."""
+        df = self.current_df
+        filename = self.current_filename
+        if df is None or not filename:
+            return None, None
+
+        base_name = filename.rsplit(".", 1)[0]
+        db_row = fetch_run(filename, DB_PATH) or {}
+
+        rpm_ok = "RPM" in df.columns and df["RPM"].notna().any()
+        if rpm_ok:
+            rpm_max = df["RPM"].max()
+            start_df = df[df["RPM"] >= 50]
+            start_row = start_df.iloc[0] if len(start_df) else df.iloc[0]
+            end_df = df[df["RPM"] >= 0.90 * rpm_max]
+            end_row = end_df.iloc[-1] if len(end_df) else df.iloc[-1]
+        else:
+            start_row = df.iloc[0]
+            end_row = df.iloc[-1]
+
+        def col(row, c, fmt=".2f"):
+            try:
+                v = float(row[c])
+                return f"{v:{fmt}}" if pd.notna(v) else ""
+            except Exception:
+                return ""
+
+        # Results — whatever's currently in the Results tab (matches original's
+        # "use edited values if present" behaviour, since our tab is always
+        # populated with either saved or df-computed defaults already)
+        res = self.results_tab.get_values()
+
+        pdf_data = {
+            "filename": filename,
+            "test_date": extract_test_date(filename),
+            "test_time": "",
+            "saved_at": db_row.get("saved_at", ""),
+            "duration_s": f"{float(df['Time'].max()):.1f}" if "Time" in df.columns else "",
+            "num_rows": str(len(df)),
+            "run_name": db_row.get("display_name") or base_name,
+            "operator": "",
+            "mechanical_power": "",
+            "electrical_power": "",
+            "mechanical_efficiency": "",
+            "overall_efficiency": "",
+            "init_esc_temp": col(start_row, "ESC_Temp", ".1f"),
+            "init_motor_temp": col(start_row, "Motor_Temp", ".1f"),
+            "esc_inlet_coolant": col(start_row, "ESC_Inlet_Temp_C", ".1f"),
+            "motor_inlet_coolant": col(start_row, "Motor_Inlet_Temp_C", ".1f"),
+            "esc_inlet_flow": col(start_row, "ESC_Flow", ".2f"),
+            "esc_inlet_pressure": col(start_row, "ESC_Pressure", ".3f"),
+            "battery_voltage": col(start_row, "Voltage", ".2f"),
+            **res,
+            **{k: str(v) for k, v in self.initial_params_tab.get_values().items()},
+        }
+
+        # Test Parameter Check
+        tpc_rows = self.test_check_tab.get_rows()
+        if tpc_rows:
+            pdf_data["test_param_check"] = tpc_rows
+
+        # Efficiency — base electrical power from raw df, overridden by a
+        # precise Measurable Params calculation if the user ran one
+        if "Voltage" in df.columns and "Current" in df.columns:
+            pdf_data["electrical_power"] = f"{float(df['Voltage'].mean() * df['Current'].mean()):.0f}"
+        eff = self.measurable_tab.last_results
+        if eff:
+            pm = eff.get("P_mech", (None, None))[0]
+            pdc = eff.get("P_DC", (None, None))[0]
+            eo = eff.get("eta_overall", (None, None))[0]
+            em = eff.get("eta_mech", (None, None))[0]
+            if pm: pdf_data["mechanical_power"] = f"{pm:.0f}"
+            if pdc: pdf_data["electrical_power"] = f"{pdc:.0f}"
+            if eo: pdf_data["overall_efficiency"] = f"{eo:.4f}"
+            if em: pdf_data["mechanical_efficiency"] = f"{em:.2f}"
+
+        chart_imgs = self.plots_tab.get_saved_plots(filename)
+        pdf_bytes = build_pdf_report(pdf_data, chart_imgs, pdf_data["run_name"])
+        return pdf_bytes, f"{base_name}_report.pdf"
 
 
 def main():

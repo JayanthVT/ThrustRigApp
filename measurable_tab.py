@@ -26,6 +26,7 @@ class MeasurableParametersTab(QWidget):
     def __init__(self):
         super().__init__()
         self.df: pd.DataFrame | None = None
+        self.last_results = None
 
         outer = QVBoxLayout(self)
         scroll = QScrollArea()
@@ -103,6 +104,7 @@ class MeasurableParametersTab(QWidget):
 
     def load_run(self, df: pd.DataFrame):
         self.df = df
+        self.last_results = None
         self._clear_layout(self.mech_row)
         self._clear_layout(self.elec_row)
         self._clear_layout(self.eff_row)
@@ -179,6 +181,7 @@ class MeasurableParametersTab(QWidget):
             "V_DC": s(dfw["V_DC"]), "I_DC": s(dfw["I_DC"]), "P_DC": s(dfw["P_DC"]),
             "eta_overall": s(dfw["eta_overall"]), "eta_mech": s(dfw["eta_mech"]),
         }
+        self.last_results = res
 
         self.results_caption.setText(
             f"Results for window {win_start:.1f}s → {win_end:.1f}s  ({len(dfw):,} rows)  |  "

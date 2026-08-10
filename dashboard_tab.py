@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame,
     QSpinBox, QGroupBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from python_functions.charts import pl_single
@@ -92,7 +92,13 @@ class DashboardTab(QWidget):
 
         root.addStretch()
         self._render_placeholder()
-        self._set_plot_placeholder()
+        # QWebEngineView's Chromium process isn't fully initialized the instant
+        # the widget is constructed (before the window is shown) — a setHtml()
+        # call made synchronously here can silently get dropped. Deferring by
+        # one event-loop tick lets it finish initializing first. This is what
+        # caused the Thrust chart not to appear on the very first import right
+        # after launching the app.
+        QTimer.singleShot(0, self._set_plot_placeholder)
 
     def _set_plot_placeholder(self):
         """Dark empty page instead of QWebEngineView's default white background."""
