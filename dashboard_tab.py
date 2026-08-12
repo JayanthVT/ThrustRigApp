@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from python_functions.charts import pl_single
-from plotly_asset import get_plotly_js_url
+from plotly_asset import get_plotly_script_tag, plotly_js_status, get_assets_base_url
 from card_style import metric_card
 
 
@@ -95,13 +95,26 @@ class DashboardTab(QWidget):
         self.plot_view.setMinimumHeight(380)
         root.addWidget(self.plot_view)
 
+        self.chart_status = QLabel("")
+        self.chart_status.setStyleSheet("color:#f59e0b; font-size:11px;")
+        root.addWidget(self.chart_status)
+
         root.addStretch()
         self._render_placeholder()
+        self._has_real_chart = False
         # QWebEngineView's Chromium process isn't fully initialized the instant
         # the widget is constructed (before the window is shown) — a setHtml()
         # call made synchronously here can silently get dropped. Deferring by
         # one event-loop tick lets it finish initializing first.
-        QTimer.singleShot(0, self._set_plot_placeholder)
+        # GUARD: only set the blank placeholder if a real chart hasn't already
+        # loaded by the time this fires — otherwise, if load_dataframe() runs
+        # before the event loop's first tick, this would overwrite the real
+        # chart with a blank page.
+        QTimer.singleShot(0, self._deferred_initial_placeholder)
+
+    def _deferred_initial_placeholder(self):
+        if not self._has_real_chart:
+            self._set_plot_placeholder()
 
     def _set_plot_placeholder(self):
         """Dark empty page instead of QWebEngineView's default white background."""
@@ -229,13 +242,30 @@ class DashboardTab(QWidget):
         fig = pl_single(df, y_col, color, y_col, y_label, title)
         fig.update_layout(paper_bgcolor="#0d0f14", plot_bgcolor="#0d0f14")
         chart_html = fig.to_html(include_plotlyjs=False, full_html=False)
+        found_local, js_path = plotly_js_status()
+
+        if not found_local:
+            self.plot_view.setHtml(
+                "<html><body style='background:#0d0f14; color:#f59e0b; "
+                "font-family:sans-serif; padding:20px;'>Chart unavailable: "
+                f"plotly.min.js not found at<br><code>{js_path}</code></body></html>"
+            )
+            self.chart_status.setText(
+                f"⚠️ assets/plotly.min.js not found — expected at: {js_path}"
+            )
+            return
+
         html = f"""
         <html>
         <head>
-            <script src="{get_plotly_js_url()}"></script>
+            {get_plotly_script_tag()}
             <style>html, body {{ background:#0d0f14; margin:0; padding:0; }}</style>
         </head>
         <body>{chart_html}</body>
         </html>
         """
-        self.plot_view.setHtml(html)
+        # baseUrl is required — see plotly_asset.py's module docstring for
+        # why (without it, Chromium blocks the local script load entirely).
+        self.plot_view.setHtml(html, get_assets_base_url())
+        self._has_real_chart = True
+        self.chart_status.setText("")

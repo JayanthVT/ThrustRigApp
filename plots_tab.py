@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from python_functions.charts import DARK, fig_to_png
-from plotly_asset import get_plotly_js_url
+from plotly_asset import get_plotly_script_tag, plotly_js_status, get_assets_base_url
 
 _EXCLUDE = {"Thrust_0deg_kg", "Thrust_90deg_kg", "Thrust_180deg_kg",
             "Thrust_270deg_kg", "Total_Weight"}
@@ -288,17 +288,29 @@ class PlotsTab(QWidget):
             )
         fig.update_layout(**layout)
 
+        found_local, js_path = plotly_js_status()
+        if not found_local:
+            self.plot_view.setHtml(
+                "<html><body style='background:#0d0f14; color:#f59e0b; "
+                "font-family:sans-serif; padding:20px;'>Chart unavailable: "
+                f"plotly.min.js not found at<br><code>{js_path}</code></body></html>"
+            )
+            self.caption.setText(f"⚠️ assets/plotly.min.js not found — expected at: {js_path}")
+            return
+
         html = f"""
         <html><head>
-            <script src="{get_plotly_js_url()}"></script>
+            {get_plotly_script_tag()}
             <style>html,body{{background:#0d0f14;margin:0;padding:0;}}</style>
         </head>
         <body>{fig.to_html(include_plotlyjs=False, full_html=False)}</body></html>
         """
-        self.plot_view.setHtml(html)
+        # baseUrl required — see plotly_asset.py docstring.
+        self.plot_view.setHtml(html, get_assets_base_url())
 
         extras_txt = "".join(f"  |  Y{i+2}: {c}" for i, c in active_extras)
-        self.caption.setText(f"X: {x_col}  |  Y1: {y_col}{extras_txt}  |  ({len(df_plot):,} pts)")
+        cap = f"X: {x_col}  |  Y1: {y_col}{extras_txt}  |  ({len(df_plot):,} pts)"
+        self.caption.setText(cap)
 
         extra_names = " & ".join(c for _, c in active_extras)
         auto_title = f"{y_col} vs {x_col}" + (f" & {extra_names}" if extra_names else "")
