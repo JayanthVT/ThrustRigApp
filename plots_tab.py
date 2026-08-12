@@ -71,6 +71,7 @@ class PlotsTab(QWidget):
 
         self.extra_y_row = QHBoxLayout()
         root.addLayout(self.extra_y_row)
+        self.extra_y_row.addStretch()
 
         # ── Controls ──
         ctrl_row = QHBoxLayout()
@@ -178,8 +179,12 @@ class PlotsTab(QWidget):
         idx = len(self.extra_y_combos)
         label = QLabel(f"Y{idx + 1} axis")
         combo.setProperty("_label_widget", label)
-        self.extra_y_row.addWidget(label)
-        self.extra_y_row.addWidget(combo)
+        # Insert before the trailing stretch (always the last item) so new
+        # pairs append left-to-right and the row stays compact instead of
+        # the label/combo splitting to fill the whole row width.
+        insert_at = self.extra_y_row.count() - 1
+        self.extra_y_row.insertWidget(insert_at, label)
+        self.extra_y_row.insertWidget(insert_at + 1, combo)
         self.render_plot()
 
     def _remove_extra_y(self):

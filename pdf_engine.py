@@ -21,7 +21,7 @@ from reportlab.platypus import (
 
 # ── Paths ──
 BASE_DIR  = Path(__file__).parent
-LOGO_PATH = BASE_DIR / "ideaforge-logo.jpeg"
+LOGO_PATH = BASE_DIR / "assets" / "ideaforge-logo.jpeg"
 
 # ── Colours ──
 NAVY  = rl_colors.HexColor("#1B5E20")   # IdeaForge dark green
@@ -47,7 +47,7 @@ def _banner(txt, sty, bg, W, pad=7):
     return t
 
 
-def build_pdf_report(data, chart_images, run_name):
+def build_pdf_report(data, chart_images, run_name, sections=None):
     """
     Build and return PDF bytes.
 
@@ -55,10 +55,24 @@ def build_pdf_report(data, chart_images, run_name):
         data:          dict of placeholder_key → value
         chart_images:  list of (title_str, png_bytes)
         run_name:      string shown in the header banner
+        sections:      optional dict of {section_key: bool} controlling which
+                        sections are included. Keys: "initial_params",
+                        "test_param_check", "results", "measurable_params",
+                        "observations", "charts". "results" and
+                        "measurable_params" both render under the single
+                        RESULTS banner — "results" controls the core
+                        max/peak rows, "measurable_params" controls the
+                        Mechanical/Electrical Power + efficiency rows.
+                        Missing keys default to True (included) — so
+                        passing None includes everything, same as before
+                        this parameter existed.
 
     Returns:
         bytes — the complete PDF
     """
+    def _on(key):
+        return True if sections is None else sections.get(key, True)
+
     # ── Build PDF ──
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -225,9 +239,10 @@ def build_pdf_report(data, chart_images, run_name):
 
     t_ip = Table(ip_data, colWidths=CW)
     t_ip.setStyle(TableStyle(ip_cmds))
-    story.append(_banner("INITIAL PARAMETERS", sty_sec, BLUE, W, pad=5))
-    story.append(t_ip)
-    story.append(Spacer(1, 4*mm))
+    if _on("initial_params"):
+        story.append(_banner("INITIAL PARAMETERS", sty_sec, BLUE, W, pad=5))
+        story.append(t_ip)
+        story.append(Spacer(1, 4*mm))
 
     # ── TEST PARAMETER CHECK ──
     tpc_rows = data.get("test_param_check")
@@ -239,7 +254,7 @@ def build_pdf_report(data, chart_images, run_name):
         except Exception:
             tpc_rows = []
 
-    if tpc_rows:
+    if tpc_rows and _on("test_param_check"):
         sty_tpc_lbl  = _S("tpclbl", fontName="Helvetica",      fontSize=8,  textColor=BLACK, leading=11)
         sty_tpc_pass = _S("tpcpas", fontName="Helvetica-Bold",  fontSize=8,  textColor=rl_colors.HexColor("#1B5E20"))
         sty_tpc_fail = _S("tpcfail",fontName="Helvetica-Bold",  fontSize=8,  textColor=rl_colors.HexColor("#B71C1C"))
@@ -279,8 +294,9 @@ def build_pdf_report(data, chart_images, run_name):
         story.append(t_tpc)
         story.append(Spacer(1, 4*mm))
 
-    # ── RESULTS ──
-    res_rows = [
+    # ── RESULTS (core) + MEASURABLE PARAMS (efficiency) — two independent
+    # toggles, but rendered together under one "RESULTS" banner ──
+    res_rows_core = [
         ("Max. Temp — ESC Inlet",      "max_esc_inlet_temp",    "°C"),
         ("Max. Temp — Motor Inlet",    "max_motor_inlet_temp",  "°C"),
         ("Max. Pressure — ESC Inlet",  "max_esc_pressure",      "Bar"),
@@ -293,13 +309,14 @@ def build_pdf_report(data, chart_images, run_name):
         ("Max. ESC Temp",              "max_esc_temp",          "°C"),
         ("Max. Motor Temp",            "max_motor_temp",        "°C"),
         ("Time at Target RPM",         "time_at_target_rpm",    "s"),
+    ]
+    res_rows_measurable = [
         ("Mechanical Power",           "mechanical_power",      "W"),
         ("Electrical Power",           "electrical_power",      "W"),
         ("Mechanical Efficiency",      "mechanical_efficiency", "%"),
         ("Overall Efficiency",         "overall_efficiency",    "g/W"),
     ]
     CW2 = [W*0.55, W*0.33, W*0.12]
-    res_data = []
     res_cmds = [
         ("GRID",          (0,0),(-1,-1), 0.4, MGRAY),
         ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
@@ -308,23 +325,39 @@ def build_pdf_report(data, chart_images, run_name):
         ("LEFTPADDING",   (0,0),(-1,-1), 5),
         ("BACKGROUND",    (0,0),(0,-1),  LGRAY),
     ]
-    for lbl, key, unit in res_rows:
-        v = data.get(key, "")
-        if v in (None, "", "—"):
-            continue
-        res_data.append([
-            Paragraph(lbl,  sty_res),
-            pv(key),
-            Paragraph(unit, sty_chk),
-        ])
-    t_res = Table(res_data, colWidths=CW2)
-    t_res.setStyle(TableStyle(res_cmds))
-    story.append(KeepTogether([_banner("RESULTS", sty_sec, NAVY, W, pad=5), t_res]))
-    story.append(Spacer(1, 4*mm))
+
+    def _rows_for(row_defs):
+        out = []
+        for lbl, key, unit in row_defs:
+            v = data.get(key, "")
+            if v in (None, "", "—"):
+                continue
+            out.append([Paragraph(lbl, sty_res), pv(key), Paragraph(unit, sty_chk)])
+        return out
+
+    res_data = []
+    if _on("results"):
+        res_data += _rows_for(res_rows_core)
+    if _on("measurable_params"):
+        res_data += _rows_for(res_rows_measurable)
+
+    if _on("results") or _on("measurable_params"):
+        result_flowables = [_banner("RESULTS", sty_sec, NAVY, W, pad=5)]
+        if res_data:
+            t_res = Table(res_data, colWidths=CW2)
+            t_res.setStyle(TableStyle(res_cmds))
+            result_flowables.append(t_res)
+        else:
+            # reportlab's Table() rejects a 0-row table outright — this
+            # happens whenever none of the included fields have a value yet
+            # (e.g. a freshly-imported run with nothing computed/entered).
+            result_flowables.append(Paragraph("No results recorded for this run.", sty_val))
+        story.append(KeepTogether(result_flowables))
+        story.append(Spacer(1, 4*mm))
 
     # ── OBSERVATIONS ──
     obs = data.get("notes", "")
-    if obs:
+    if obs and _on("observations"):
         # Convert newlines to ReportLab line breaks
         obs_html = str(obs).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
         obs_tbl = Table([[Paragraph(obs_html, sty_obs)]], colWidths=[W])
@@ -339,7 +372,7 @@ def build_pdf_report(data, chart_images, run_name):
         story.append(Spacer(1, 4*mm))
 
     # ── CHARTS ──
-    if chart_images:
+    if chart_images and _on("charts"):
         story.append(Spacer(1, 4*mm))
         story.append(_banner("TEST CHARTS", sty_sec, NAVY, W))
         story.append(Spacer(1, 4*mm))

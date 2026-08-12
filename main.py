@@ -164,19 +164,14 @@ class MainWindow(QMainWindow):
         self.plots_tab = PlotsTab()
         self.pdf_tab = PdfTab(generate_callback=self._generate_pdf_data)
 
-        # Plot Builder now lives inside the Dashboard tab (below the Thrust
-        # plot) instead of being its own top-level tab. self.plots_tab still
-        # exists as a normal widget/instance — load_run() and
-        # get_saved_plots() below are unaffected — it's just embedded rather
-        # than added via addTab().
-        self.dashboard_tab.embed_plot_builder(self.plots_tab)
-
+        # Plot Builder is its own top-level tab, before PDF Report.
         self.tabs.addTab(self.dashboard_tab, "📊 Dashboard")
         self.tabs.addTab(self.measurable_tab, "📐 Measurable Params")
         self.tabs.addTab(self.initial_params_tab, "🧪 Initial Params")
         self.tabs.addTab(self.test_check_tab, "✅ Test Parameter Check")
         self.tabs.addTab(self.results_tab, "📈 Results")
-        self.tabs.addTab(self.debug_data_tab, "🐞 Debug & Raw Data")
+        self.tabs.addTab(self.debug_data_tab, "📋 Raw Data Table")
+        self.tabs.addTab(self.plots_tab, "📉 Plot Builder")
         self.tabs.addTab(self.pdf_tab, "📄 PDF Report")
 
         main_v.addWidget(self.tabs, stretch=1)
@@ -325,8 +320,10 @@ class MainWindow(QMainWindow):
         self.save_status.setText("✅ Saved.")
         self.statusBar().showMessage("Parameters updated.", 4000)
 
-    def _generate_pdf_data(self):
+    def _generate_pdf_data(self, sections=None):
         """Port of view_plots.render_downloads()'s pdf_data assembly.
+        `sections` is the {key: bool} dict from PdfTab's checklist, controlling
+        which parts of the report get rendered.
         Returns (pdf_bytes, suggested_filename) or (None, None) if nothing loaded."""
         df = self.current_df
         filename = self.current_filename
@@ -404,7 +401,7 @@ class MainWindow(QMainWindow):
             if em: pdf_data["mechanical_efficiency"] = f"{em:.2f}"
 
         chart_imgs = self.plots_tab.get_saved_plots(filename)
-        pdf_bytes = build_pdf_report(pdf_data, chart_imgs, pdf_data["run_name"])
+        pdf_bytes = build_pdf_report(pdf_data, chart_imgs, pdf_data["run_name"], sections=sections)
         return pdf_bytes, f"{base_name}_report.pdf"
 
 
