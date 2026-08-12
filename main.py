@@ -45,6 +45,7 @@ from debug_data_tab import DebugDataTab
 from plots_tab import PlotsTab
 from pdf_tab import PdfTab
 from pdf_engine import build_pdf_report
+from docx_engine import build_docx_report
 
 BASE_DIR = Path(__file__).parent
 
@@ -162,7 +163,10 @@ class MainWindow(QMainWindow):
         self.results_tab = ResultsTab()
         self.debug_data_tab = DebugDataTab()
         self.plots_tab = PlotsTab()
-        self.pdf_tab = PdfTab(generate_callback=self._generate_pdf_data)
+        self.pdf_tab = PdfTab(
+            generate_callback=self._generate_pdf_data,
+            docx_generate_callback=self._generate_docx_data,
+        )
 
         # Plot Builder is its own top-level tab, before PDF Report.
         self.tabs.addTab(self.dashboard_tab, "📊 Dashboard")
@@ -194,6 +198,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
         self.current_filename = None
         self.current_df = None
+        # Mirrors Streamlit's @st.cache_data(_cached_pipeline) — keyed by
+        # (path, mtime) so re-opening a run you've already loaded this
+        # session skips load/normalize/parse_time/clean_and_drop entirely.
+        self._pipeline_cache: dict[tuple, tuple] = {}
         self._refresh_library()
 
     # ── Library sidebar ─────────────────────────────────────
@@ -250,28 +258,40 @@ class MainWindow(QMainWindow):
 
     # ── Shared load pipeline ─────────────────────────────────
     def _load_and_show(self, file_path: Path, filename: str):
-        logs = []
-        df = load_file_from_path(file_path, logs)
-        if df is None:
-            QMessageBox.critical(self, "Load failed", "Could not parse the file.\n\n" + "\n".join(logs))
-            return None
+        cache_key = (str(file_path), file_path.stat().st_mtime) if file_path.exists() else None
+        cached = self._pipeline_cache.get(cache_key) if cache_key else None
 
-        df_raw = df.copy()  # exactly as loaded — before any normalization/cleaning
+        if cached:
+            df, df_raw, logs = cached
+            df = df.copy()
+            df_raw = df_raw.copy()
+            logs = list(logs) + ["⚡ Loaded from cache — pipeline skipped (already parsed this session)"]
+        else:
+            logs = []
+            df = load_file_from_path(file_path, logs)
+            if df is None:
+                QMessageBox.critical(self, "Load failed", "Could not parse the file.\n\n" + "\n".join(logs))
+                return None
 
-        df = normalize_columns(df, logs)
-        df = parse_time(df, logs)
-        df = clean_and_drop(df, logs)
+            df_raw = df.copy()  # exactly as loaded — before any normalization/cleaning
 
-        if all(c in df.columns for c in ["Thrust", "Voltage", "Current"]):
-            p_elec = df["Voltage"] * df["Current"]
-            df["Overall_Efficiency_gW"] = (
-                (df["Thrust"] * 101.972) / p_elec
-            ).replace([np.inf, -np.inf], np.nan)
-            logs.append("✅ Added Overall_Efficiency_gW column")
+            df = normalize_columns(df, logs)
+            df = parse_time(df, logs)
+            df = clean_and_drop(df, logs)
 
-        if df.empty:
-            QMessageBox.warning(self, "Empty data", "DataFrame is empty after cleaning.")
-            return None
+            if all(c in df.columns for c in ["Thrust", "Voltage", "Current"]):
+                p_elec = df["Voltage"] * df["Current"]
+                df["Overall_Efficiency_gW"] = (
+                    (df["Thrust"] * 101.972) / p_elec
+                ).replace([np.inf, -np.inf], np.nan)
+                logs.append("✅ Added Overall_Efficiency_gW column")
+
+            if df.empty:
+                QMessageBox.warning(self, "Empty data", "DataFrame is empty after cleaning.")
+                return None
+
+            if cache_key:
+                self._pipeline_cache[cache_key] = (df.copy(), df_raw.copy(), list(logs))
 
         self.current_filename = filename
         self.current_df = df
@@ -320,15 +340,16 @@ class MainWindow(QMainWindow):
         self.save_status.setText("✅ Saved.")
         self.statusBar().showMessage("Parameters updated.", 4000)
 
-    def _generate_pdf_data(self, sections=None):
+    def _assemble_report_data(self, sections=None):
         """Port of view_plots.render_downloads()'s pdf_data assembly.
-        `sections` is the {key: bool} dict from PdfTab's checklist, controlling
-        which parts of the report get rendered.
-        Returns (pdf_bytes, suggested_filename) or (None, None) if nothing loaded."""
+        Shared by both PDF and DOCX generation so they always contain
+        identical content — only pdf_engine/docx_engine differ in how
+        they lay it out.
+        Returns (data_dict, chart_imgs, base_name) or (None, None, None)."""
         df = self.current_df
         filename = self.current_filename
         if df is None or not filename:
-            return None, None
+            return None, None, None
 
         base_name = filename.rsplit(".", 1)[0]
         db_row = fetch_run(filename, DB_PATH) or {}
@@ -356,7 +377,7 @@ class MainWindow(QMainWindow):
         # populated with either saved or df-computed defaults already)
         res = self.results_tab.get_values()
 
-        pdf_data = {
+        report_data = {
             "filename": filename,
             "test_date": extract_test_date(filename),
             "test_time": "",
@@ -383,26 +404,43 @@ class MainWindow(QMainWindow):
         # Test Parameter Check
         tpc_rows = self.test_check_tab.get_rows()
         if tpc_rows:
-            pdf_data["test_param_check"] = tpc_rows
+            report_data["test_param_check"] = tpc_rows
 
         # Efficiency — base electrical power from raw df, overridden by a
         # precise Measurable Params calculation if the user ran one
         if "Voltage" in df.columns and "Current" in df.columns:
-            pdf_data["electrical_power"] = f"{float(df['Voltage'].mean() * df['Current'].mean()):.0f}"
+            report_data["electrical_power"] = f"{float(df['Voltage'].mean() * df['Current'].mean()):.0f}"
         eff = self.measurable_tab.last_results
         if eff:
             pm = eff.get("P_mech", (None, None))[0]
             pdc = eff.get("P_DC", (None, None))[0]
             eo = eff.get("eta_overall", (None, None))[0]
             em = eff.get("eta_mech", (None, None))[0]
-            if pm: pdf_data["mechanical_power"] = f"{pm:.0f}"
-            if pdc: pdf_data["electrical_power"] = f"{pdc:.0f}"
-            if eo: pdf_data["overall_efficiency"] = f"{eo:.4f}"
-            if em: pdf_data["mechanical_efficiency"] = f"{em:.2f}"
+            if pm: report_data["mechanical_power"] = f"{pm:.0f}"
+            if pdc: report_data["electrical_power"] = f"{pdc:.0f}"
+            if eo: report_data["overall_efficiency"] = f"{eo:.4f}"
+            if em: report_data["mechanical_efficiency"] = f"{em:.2f}"
 
         chart_imgs = self.plots_tab.get_saved_plots(filename)
-        pdf_bytes = build_pdf_report(pdf_data, chart_imgs, pdf_data["run_name"], sections=sections)
+        return report_data, chart_imgs, base_name
+
+    def _generate_pdf_data(self, sections=None):
+        """Returns (pdf_bytes, suggested_filename) or (None, None)."""
+        report_data, chart_imgs, base_name = self._assemble_report_data(sections)
+        if report_data is None:
+            return None, None
+        pdf_bytes = build_pdf_report(report_data, chart_imgs, report_data["run_name"], sections=sections)
         return pdf_bytes, f"{base_name}_report.pdf"
+
+    def _generate_docx_data(self, sections=None):
+        """Returns (docx_bytes, suggested_filename) or (None, None).
+        Built from the exact same data/chart_imgs as the PDF — see
+        _assemble_report_data — so the two always show the same numbers."""
+        report_data, chart_imgs, base_name = self._assemble_report_data(sections)
+        if report_data is None:
+            return None, None
+        docx_bytes = build_docx_report(report_data, chart_imgs, report_data["run_name"], sections=sections)
+        return docx_bytes, f"{base_name}_report.docx"
 
 
 def main():

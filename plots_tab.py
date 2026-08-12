@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from python_functions.charts import DARK, fig_to_png
+from plotly_asset import get_plotly_js_url
 
 _EXCLUDE = {"Thrust_0deg_kg", "Thrust_90deg_kg", "Thrust_180deg_kg",
             "Thrust_270deg_kg", "Total_Weight"}
@@ -288,8 +289,11 @@ class PlotsTab(QWidget):
         fig.update_layout(**layout)
 
         html = f"""
-        <html><head><style>html,body{{background:#0d0f14;margin:0;padding:0;}}</style></head>
-        <body>{fig.to_html(include_plotlyjs="cdn", full_html=False)}</body></html>
+        <html><head>
+            <script src="{get_plotly_js_url()}"></script>
+            <style>html,body{{background:#0d0f14;margin:0;padding:0;}}</style>
+        </head>
+        <body>{fig.to_html(include_plotlyjs=False, full_html=False)}</body></html>
         """
         self.plot_view.setHtml(html)
 

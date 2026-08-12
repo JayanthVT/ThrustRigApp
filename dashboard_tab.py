@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from python_functions.charts import pl_single
+from plotly_asset import get_plotly_js_url
 from card_style import metric_card
 
 
@@ -227,12 +228,13 @@ class DashboardTab(QWidget):
 
         fig = pl_single(df, y_col, color, y_col, y_label, title)
         fig.update_layout(paper_bgcolor="#0d0f14", plot_bgcolor="#0d0f14")
-        chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False)
+        chart_html = fig.to_html(include_plotlyjs=False, full_html=False)
         html = f"""
         <html>
-        <head><style>
-            html, body {{ background:#0d0f14; margin:0; padding:0; }}
-        </style></head>
+        <head>
+            <script src="{get_plotly_js_url()}"></script>
+            <style>html, body {{ background:#0d0f14; margin:0; padding:0; }}</style>
+        </head>
         <body>{chart_html}</body>
         </html>
         """

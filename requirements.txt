@@ -5,4 +5,5 @@ numpy
 plotly
 openpyxl
 reportlab
-PyMuPDF
+pymupdf
+python-docx
