@@ -168,14 +168,16 @@ class MainWindow(QMainWindow):
             docx_generate_callback=self._generate_docx_data,
         )
 
-        # Plot Builder is its own top-level tab, before PDF Report.
+        # Order: Dashboard, Initial Params, Results, Checklist, Raw Data
+        # Table, Plot Builder (icon only), Measurable Params (icon only),
+        # PDF Report.
         self.tabs.addTab(self.dashboard_tab, "📊 Dashboard")
-        self.tabs.addTab(self.measurable_tab, "📐 Measurable Params")
         self.tabs.addTab(self.initial_params_tab, "🧪 Initial Params")
-        self.tabs.addTab(self.test_check_tab, "✅ Test Parameter Check")
         self.tabs.addTab(self.results_tab, "📈 Results")
+        self.tabs.addTab(self.test_check_tab, "✅ Checklist")
         self.tabs.addTab(self.debug_data_tab, "📋 Raw Data Table")
-        self.tabs.addTab(self.plots_tab, "📉 Plot Builder")
+        self.tabs.addTab(self.plots_tab, "📉")
+        self.tabs.addTab(self.measurable_tab, "📐")
         self.tabs.addTab(self.pdf_tab, "📄 PDF Report")
 
         main_v.addWidget(self.tabs, stretch=1)

@@ -58,11 +58,12 @@ def build_pdf_report(data, chart_images, run_name, sections=None):
         sections:      optional dict of {section_key: bool} controlling which
                         sections are included. Keys: "initial_params",
                         "test_param_check", "results", "measurable_params",
-                        "observations", "charts". "results" and
-                        "measurable_params" both render under the single
-                        RESULTS banner — "results" controls the core
-                        max/peak rows, "measurable_params" controls the
-                        Mechanical/Electrical Power + efficiency rows.
+                        "charts". "results" and "measurable_params" both
+                        render under the single RESULTS banner —
+                        "results" controls the core max/peak rows,
+                        "measurable_params" controls the Mechanical/
+                        Electrical Power + efficiency rows. Observations
+                        has no separate key — it follows "initial_params".
                         Missing keys default to True (included) — so
                         passing None includes everything, same as before
                         this parameter existed.
@@ -368,7 +369,7 @@ def build_pdf_report(data, chart_images, run_name, sections=None):
 
     # ── OBSERVATIONS ──
     obs = data.get("notes", "")
-    if obs and _on("observations"):
+    if obs and _on("initial_params"):
         # Convert newlines to ReportLab line breaks
         obs_html = str(obs).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
         obs_tbl = Table([[Paragraph(obs_html, sty_obs)]], colWidths=[W])

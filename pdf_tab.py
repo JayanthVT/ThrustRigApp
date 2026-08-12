@@ -32,11 +32,10 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 # Section keys must match what pdf_engine.build_pdf_report()'s `sections`
 # dict looks for.
 _SECTIONS = [
-    ("initial_params",    "Initial Parameters"),
+    ("initial_params",    "Initial Parameters (incl. Observations)"),
     ("test_param_check",  "Test Parameter Check"),
     ("results",           "Results"),
     ("measurable_params", "Measurable Params (efficiency)"),
-    ("observations",      "Observations"),
     ("charts",            "Test Charts (Saved Plots)"),
 ]
 

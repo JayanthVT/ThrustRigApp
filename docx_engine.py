@@ -359,7 +359,7 @@ def build_docx_report(data, chart_images, run_name, sections=None) -> bytes:
 
     # ── OBSERVATIONS ──
     obs = data.get("notes", "")
-    if obs and _on("observations"):
+    if obs and _on("initial_params"):
         _banner(doc, "OBSERVATIONS", BLUE, W)
         t_obs = doc.add_table(rows=1, cols=1)
         _set_col_widths(t_obs, [W])
