@@ -42,13 +42,19 @@ _SECTIONS = [
 
 
 class PdfTab(QWidget):
-    def __init__(self, generate_callback):
+    def __init__(self, generate_callback, docx_generate_callback=None):
         """generate_callback: (sections: dict) -> (pdf_bytes, suggested_filename)
-        or (None, None) on failure."""
+        or (None, None) on failure.
+        docx_generate_callback: same shape, for the editable Word version —
+        built from identical underlying data (see MainWindow._assemble_report_data),
+        so PDF and DOCX always agree on content."""
         super().__init__()
         self.generate_callback = generate_callback
+        self.docx_generate_callback = docx_generate_callback
         self.pdf_bytes = None
+        self.docx_bytes = None
         self.suggested_filename = "report.pdf"
+        self.suggested_docx_filename = "report.docx"
 
         root = QVBoxLayout(self)
 
@@ -74,6 +80,11 @@ class PdfTab(QWidget):
         self.download_btn.clicked.connect(self.download)
         self.download_btn.setEnabled(False)
         top_row.addWidget(self.download_btn)
+
+        self.download_docx_btn = QPushButton("⬇️  Download as Word (.docx)")
+        self.download_docx_btn.clicked.connect(self.download_docx)
+        self.download_docx_btn.setEnabled(False)
+        top_row.addWidget(self.download_docx_btn)
         top_row.addStretch()
         root.addLayout(top_row)
 
@@ -116,6 +127,18 @@ class PdfTab(QWidget):
         self.pdf_bytes = pdf_bytes
         self.suggested_filename = suggested_filename or "report.pdf"
         self.download_btn.setEnabled(True)
+
+        if self.docx_generate_callback:
+            try:
+                docx_bytes, docx_filename = self.docx_generate_callback(self.get_sections())
+                self.docx_bytes = docx_bytes
+                self.suggested_docx_filename = docx_filename or "report.docx"
+                self.download_docx_btn.setEnabled(docx_bytes is not None)
+            except Exception as e:
+                self.docx_bytes = None
+                self.download_docx_btn.setEnabled(False)
+                # Don't block the PDF flow over a DOCX failure — just surface it.
+                QMessageBox.warning(self, "Word document generation failed", str(e))
 
         try:
             self._render_preview(pdf_bytes)
@@ -170,4 +193,16 @@ class PdfTab(QWidget):
         if not path_str:
             return
         Path(path_str).write_bytes(self.pdf_bytes)
+        self.status_label.setText(f"✅ Saved to {path_str}")
+
+    def download_docx(self):
+        if not self.docx_bytes:
+            return
+        path_str, _ = QFileDialog.getSaveFileName(
+            self, "Save Word report", self.suggested_docx_filename,
+            "Word documents (*.docx)"
+        )
+        if not path_str:
+            return
+        Path(path_str).write_bytes(self.docx_bytes)
         self.status_label.setText(f"✅ Saved to {path_str}")

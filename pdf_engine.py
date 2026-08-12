@@ -352,7 +352,18 @@ def build_pdf_report(data, chart_images, run_name, sections=None):
             # happens whenever none of the included fields have a value yet
             # (e.g. a freshly-imported run with nothing computed/entered).
             result_flowables.append(Paragraph("No results recorded for this run.", sty_val))
-        story.append(KeepTogether(result_flowables))
+        # NOTE: intentionally NOT wrapped in KeepTogether. That forced the
+        # entire banner+table to jump to a fresh page whenever it didn't
+        # fit in whatever space remained — even if only the last couple of
+        # rows were the problem — leaving a large blank gap on the previous
+        # page. Appending separately lets the table split naturally at row
+        # boundaries like every other section's table already does (Initial
+        # Params, Test Parameter Check), filling the page properly. Safe
+        # here specifically because the Results table has no header row to
+        # repeat (it's plain label/value/unit triples), so a mid-table
+        # split loses no information.
+        for flowable in result_flowables:
+            story.append(flowable)
         story.append(Spacer(1, 4*mm))
 
     # ── OBSERVATIONS ──
