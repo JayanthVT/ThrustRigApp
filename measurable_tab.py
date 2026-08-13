@@ -10,8 +10,8 @@ Session-only, same as the Streamlit version (not persisted to DB).
 import numpy as np
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QDoubleSpinBox,
-    QPushButton, QFrame, QScrollArea
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox,
+    QPushButton, QScrollArea
 )
 
 

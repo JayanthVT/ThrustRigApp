@@ -358,14 +358,10 @@ class MainWindow(QMainWindow):
 
         rpm_ok = "RPM" in df.columns and df["RPM"].notna().any()
         if rpm_ok:
-            rpm_max = df["RPM"].max()
             start_df = df[df["RPM"] >= 50]
             start_row = start_df.iloc[0] if len(start_df) else df.iloc[0]
-            end_df = df[df["RPM"] >= 0.90 * rpm_max]
-            end_row = end_df.iloc[-1] if len(end_df) else df.iloc[-1]
         else:
             start_row = df.iloc[0]
-            end_row = df.iloc[-1]
 
         def col(row, c, fmt=".2f"):
             try:

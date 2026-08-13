@@ -3,6 +3,7 @@ PyQt6-WebEngine
 pandas
 numpy
 plotly
+matplotlib
 openpyxl
 reportlab
 pymupdf

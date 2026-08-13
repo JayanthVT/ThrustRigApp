@@ -6,7 +6,6 @@ Edit this file to change PDF layout, colours, sections, or formatting.
 """
 
 import io
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 from reportlab.lib.pagesizes import A4
@@ -15,8 +14,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    Image, PageBreak, KeepTogether
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 )
 
 # ── Paths ──
@@ -87,7 +85,6 @@ def build_pdf_report(data, chart_images, run_name, sections=None):
     sty_meta = _S("meta", fontName="Helvetica",         fontSize=8,  textColor=BLACK, alignment=TA_CENTER)
     sty_sec  = _S("sec",  fontName="Helvetica-Bold",    fontSize=9,  textColor=WHITE,  alignment=TA_LEFT)
     sty_lbl  = _S("lbl",  fontName="Helvetica-Bold",    fontSize=8,  textColor=rl_colors.HexColor("#222222"))
-    sty_grp  = _S("grp",  fontName="Helvetica-Oblique", fontSize=7,  textColor=rl_colors.HexColor("#666666"))
     sty_val  = _S("val",  fontName="Helvetica",         fontSize=8,  textColor=BLACK)
     sty_obs  = _S("obs",  fontName="Helvetica",         fontSize=8,  textColor=BLACK,  leading=13)
     sty_chk  = _S("chk",  fontName="Helvetica",         fontSize=7,  textColor=rl_colors.HexColor("#333333"))
@@ -396,15 +393,5 @@ def build_pdf_report(data, chart_images, run_name, sections=None):
             story.append(Spacer(1, 4*mm))
 
     doc.build(story)
-    buf.seek(0)
-    return buf.read()
-
-
-def fig_to_png(fig, dpi=150):
-    """Convert a matplotlib figure to PNG bytes and close it."""
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                facecolor=fig.get_facecolor())
-    plt.close(fig)
     buf.seek(0)
     return buf.read()

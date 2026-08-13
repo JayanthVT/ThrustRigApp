@@ -8,10 +8,10 @@ QLabel grids + QSpinBox controls instead of st.metric()/st.number_input().
 
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame,
-    QSpinBox, QGroupBox, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QSpinBox, QGroupBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from python_functions.charts import pl_single
