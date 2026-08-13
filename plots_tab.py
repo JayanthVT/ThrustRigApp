@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QRadioButton, QButtonGroup, QCheckBox, QDoubleSpinBox, QLineEdit,
+    QButtonGroup, QCheckBox, QDoubleSpinBox, QLineEdit,
     QScrollArea, QFrame
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -77,15 +77,29 @@ class PlotsTab(QWidget):
         # ── Controls ──
         ctrl_row = QHBoxLayout()
         ctrl_row.addWidget(QLabel("Type"))
-        self.line_radio = QRadioButton("Line")
-        self.scatter_radio = QRadioButton("Scatter")
-        self.line_radio.setChecked(True)
+        # NOTE: was QRadioButton, but the app's stylesheet never styled
+        # QRadioButton's checked-state indicator, so on this dark theme the
+        # dot was effectively invisible — clicking Scatter looked like the
+        # selection "just disappeared" instead of showing which was active.
+        # Checkable QPushButtons in a QButtonGroup use the same button
+        # styling already working correctly everywhere else in the app.
+        self.line_btn = QPushButton("Line")
+        self.scatter_btn = QPushButton("Scatter")
+        for btn in (self.line_btn, self.scatter_btn):
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton:checked {
+                    background: #f97316; color: #0d0f14; border-color: #f97316; font-weight: 600;
+                }
+            """)
+        self.line_btn.setChecked(True)
         type_group = QButtonGroup(self)
-        type_group.addButton(self.line_radio)
-        type_group.addButton(self.scatter_radio)
-        self.line_radio.toggled.connect(self.render_plot)
-        ctrl_row.addWidget(self.line_radio)
-        ctrl_row.addWidget(self.scatter_radio)
+        type_group.setExclusive(True)
+        type_group.addButton(self.line_btn)
+        type_group.addButton(self.scatter_btn)
+        self.line_btn.toggled.connect(self.render_plot)
+        ctrl_row.addWidget(self.line_btn)
+        ctrl_row.addWidget(self.scatter_btn)
 
         self.window_check = QCheckBox("Time window")
         self.window_check.toggled.connect(self._on_window_toggled)
@@ -235,7 +249,7 @@ class PlotsTab(QWidget):
 
         df_plot = self._windowed_df()
         active_extras = self._active_extras()
-        plot_type = "Line" if self.line_radio.isChecked() else "Scatter"
+        plot_type = "Line" if self.line_btn.isChecked() else "Scatter"
         mode = "lines" if plot_type == "Line" else "markers"
         marker_size = 4 if plot_type == "Line" else 3
 
@@ -327,10 +341,22 @@ class PlotsTab(QWidget):
         active_extras = self._active_extras()
         df_plot = self._windowed_df()
         c1 = _Y_COLOURS[0]
+        is_scatter = self.scatter_btn.isChecked()
+
+        def _draw(ax, x, y, color, label, linewidth):
+            # BUG FIX: this used to always call ax.plot() (a connected line)
+            # no matter which Type was selected in the interactive view above
+            # — so a "saved" Scatter plot was always rendered as a line in
+            # the PDF/DOCX chart, which is what "can't save scatter plots"
+            # actually was: the save silently ignored the scatter choice.
+            if is_scatter:
+                ax.scatter(x, y, color=color, s=6, label=label)
+            else:
+                ax.plot(x, y, color=color, linewidth=linewidth, label=label)
 
         with plt.style.context(DARK):
             fig, ax1 = plt.subplots(figsize=(11, 3.4))
-            ax1.plot(df_plot[x_col], df_plot[y_col], color=c1, linewidth=1.4, label=y_col)
+            _draw(ax1, df_plot[x_col], df_plot[y_col], c1, y_col, 1.4)
             ax1.set_xlabel(x_col, fontsize=8)
             ax1.set_ylabel(y_col, color=c1, fontsize=8)
             ax1.tick_params(axis="y", colors=c1)
@@ -340,7 +366,7 @@ class PlotsTab(QWidget):
                 axi = prev_ax.twinx()
                 if ei > 0:
                     axi.spines["right"].set_position(("axes", 1.0 + ei * 0.12))
-                axi.plot(df_plot[x_col], df_plot[ecol], color=ec, linewidth=1.2, label=ecol)
+                _draw(axi, df_plot[x_col], df_plot[ecol], ec, ecol, 1.2)
                 axi.set_ylabel(ecol, color=ec, fontsize=8)
                 axi.tick_params(axis="y", colors=ec)
                 prev_ax = axi

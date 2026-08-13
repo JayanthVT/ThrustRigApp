@@ -18,8 +18,28 @@ from PyQt6.QtWidgets import (
 from card_style import metric_card
 
 
-def _metric(label, value, sub=""):
-    return metric_card(label, value, sub=sub)
+def _metric(label, value, sub="", formula=""):
+    return metric_card(label, value, sub=sub, formula=formula)
+
+
+_FORMULAS = {
+    "shaft_torque": "Measured directly by the load cell — entered manually, not derived.",
+    "omega": "ω = RPM × (2π ÷ 60)\n\nAngular velocity of the shaft, converted from RPM to rad/s.",
+    "P_mech": "P_mech = τ × ω\n\nMechanical power = input shaft torque × angular velocity.",
+    "V_DC": "Measured DC bus voltage — mean over the selected steady-state window.",
+    "I_DC": "Measured DC bus current — mean over the selected steady-state window.",
+    "P_DC": "P_DC = V_DC × I_DC\n\nElectrical input power drawn from the battery.",
+    "eta_overall": (
+        "η_overall = (Thrust[N] × 101.972) ÷ P_DC\n\n"
+        "Grams of thrust produced per watt of electrical power in. "
+        "(101.972 converts thrust from newtons to grams-force.)"
+    ),
+    "eta_mech": (
+        "η_mech = (P_mech ÷ P_DC) × 100%\n\n"
+        "Mechanical power delivered as a percentage of electrical power drawn — "
+        "i.e. how much of the input power actually reached the shaft."
+    ),
+}
 
 
 class MeasurableParametersTab(QWidget):
@@ -190,12 +210,14 @@ class MeasurableParametersTab(QWidget):
 
         def met(key, unit, fmt):
             mv, sv = res.get(key, (None, None))
+            formula = _FORMULAS.get(key, "")
             if mv is None:
-                return _metric(key, "—")
-            return _metric(key.replace("_", " "), f"{mv:{fmt}} {unit}", f"±{sv:{fmt}} σ")
+                return _metric(key, "—", formula=formula)
+            return _metric(key.replace("_", " "), f"{mv:{fmt}} {unit}", f"±{sv:{fmt}} σ", formula=formula)
 
         self._clear_layout(self.mech_row)
-        self.mech_row.addWidget(_metric("Shaft Torque (input)", f"{inp_torque:.2f} Nm"))
+        self.mech_row.addWidget(_metric(
+            "Shaft Torque (input)", f"{inp_torque:.2f} Nm", formula=_FORMULAS["shaft_torque"]))
         self.mech_row.addWidget(met("omega", "rad/s", ".2f"))
         self.mech_row.addWidget(met("P_mech", "W", ".0f"))
         self.mech_row.addStretch()
