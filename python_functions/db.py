@@ -169,6 +169,19 @@ def delete_run(filename, db_path=None):
         conn.commit()
 
 
+def rename_run(filename, new_display_name, db_path=None):
+    """Update just the display name shown in the Library list. Leaves the
+    underlying filename/file_path untouched — renaming the actual file on
+    disk isn't worth the risk (breaks any external reference to it, and
+    the file_path column would need updating in lockstep)."""
+    with get_conn(db_path) as conn:
+        conn.execute(
+            "UPDATE runs SET display_name=? WHERE filename=?",
+            (new_display_name, filename),
+        )
+        conn.commit()
+
+
 def fetch_folders(db_path=None):
     """Return sorted list of distinct folder names."""
     with get_conn(db_path) as conn:

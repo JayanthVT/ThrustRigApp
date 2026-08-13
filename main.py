@@ -24,13 +24,14 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QFileDialog,
-    QTabWidget, QMessageBox, QSplitter, QLineEdit
+    QTabWidget, QMessageBox, QSplitter, QLineEdit, QMenu, QInputDialog
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QPixmap
 
 from python_functions.db import (
-    init_db, fetch_all_runs, fetch_run, save_run, update_init_params, update_result_params
+    init_db, fetch_all_runs, fetch_run, save_run, update_init_params,
+    update_result_params, delete_run, rename_run
 )
 from python_functions.data_pipeline import (
     load_file_from_path, normalize_columns, parse_time,
@@ -146,6 +147,8 @@ class MainWindow(QMainWindow):
 
         self.library_list = QListWidget()
         self.library_list.itemClicked.connect(self.open_saved_run)
+        self.library_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.library_list.customContextMenuRequested.connect(self._library_context_menu)
         sv.addWidget(self.library_list, stretch=1)
 
         splitter.addWidget(sidebar)
@@ -216,13 +219,69 @@ class MainWindow(QMainWindow):
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.library_list.addItem(item)
             return
-        for r in runs:
-            item = QListWidgetItem(r["display_name"])
+        for i, r in enumerate(runs, start=1):
+            item = QListWidgetItem(f"{i}. {r['display_name']}")
             item.setData(Qt.ItemDataRole.UserRole, r["filename"])
             self.library_list.addItem(item)
 
     def _on_search_changed(self, text: str):
         self._refresh_library(search_text=text.strip())
+
+    def _library_context_menu(self, pos):
+        item = self.library_list.itemAt(pos)
+        if item is None:
+            return
+        filename = item.data(Qt.ItemDataRole.UserRole)
+        if not filename:
+            return
+
+        menu = QMenu(self)
+        rename_action = menu.addAction("✏️  Rename")
+        delete_action = menu.addAction("🗑️  Delete")
+        action = menu.exec(self.library_list.mapToGlobal(pos))
+
+        if action == rename_action:
+            self._rename_run(filename)
+        elif action == delete_action:
+            self._delete_run(filename)
+
+    def _rename_run(self, filename: str):
+        run_meta = fetch_run(filename, DB_PATH) or {}
+        current_name = run_meta.get("display_name", filename)
+        new_name, ok = QInputDialog.getText(
+            self, "Rename log", "Display name:", text=current_name
+        )
+        if not ok or not new_name.strip() or new_name.strip() == current_name:
+            return
+        rename_run(filename, new_name.strip(), db_path=DB_PATH)
+        self._refresh_library(search_text=self.search_box.text().strip())
+        self.statusBar().showMessage(f"Renamed to: {new_name.strip()}", 4000)
+
+    def _delete_run(self, filename: str):
+        run_meta = fetch_run(filename, DB_PATH) or {}
+        display_name = run_meta.get("display_name", filename)
+        confirm = QMessageBox.question(
+            self, "Delete log",
+            f'Delete "{display_name}"?\n\n'
+            "This removes it from the library and deletes the imported "
+            "log file from disk. This can't be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        delete_run(filename, db_path=DB_PATH)
+        if self.current_filename == filename:
+            # The run that was open in every tab just got deleted out from
+            # under it — clear state rather than leave stale data on screen
+            # referencing a file that's now gone.
+            self.current_filename = None
+            self.current_df = None
+            self.update_btn.setEnabled(False)
+            self.statusBar().showMessage(f"Deleted: {display_name}", 4000)
+        else:
+            self.statusBar().showMessage(f"Deleted: {display_name}", 4000)
+        self._refresh_library(search_text=self.search_box.text().strip())
 
     def open_saved_run(self, item: QListWidgetItem):
         filename = item.data(Qt.ItemDataRole.UserRole)
