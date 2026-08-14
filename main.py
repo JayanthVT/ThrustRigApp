@@ -275,7 +275,11 @@ class MainWindow(QMainWindow):
         )
         if not ok or not new_name.strip() or new_name.strip() == current_name:
             return
-        rename_run(filename, new_name.strip(), db_path=DB_PATH)
+        try:
+            rename_run(filename, new_name.strip(), db_path=DB_PATH)
+        except Exception as e:
+            QMessageBox.critical(self, "Rename failed", f"Could not rename:\n\n{e}")
+            return
         self._refresh_library(search_text=self.search_box.text().strip())
         self.statusBar().showMessage(f"Renamed to: {new_name.strip()}", 4000)
 
@@ -292,7 +296,11 @@ class MainWindow(QMainWindow):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        delete_run(filename, db_path=DB_PATH)
+        try:
+            delete_run(filename, db_path=DB_PATH)
+        except Exception as e:
+            QMessageBox.critical(self, "Delete failed", f"Could not delete:\n\n{e}")
+            return
         if self.current_filename == filename:
             # The run that was open in every tab just got deleted out from
             # under it — clear state rather than leave stale data on screen
@@ -300,9 +308,7 @@ class MainWindow(QMainWindow):
             self.current_filename = None
             self.current_df = None
             self.update_btn.setEnabled(False)
-            self.statusBar().showMessage(f"Deleted: {display_name}", 4000)
-        else:
-            self.statusBar().showMessage(f"Deleted: {display_name}", 4000)
+        self.statusBar().showMessage(f"Deleted: {display_name}", 4000)
         self._refresh_library(search_text=self.search_box.text().strip())
 
     def open_saved_run(self, item: QListWidgetItem):
@@ -326,7 +332,11 @@ class MainWindow(QMainWindow):
         src = Path(path_str)
         dest = LOGS_DIR / src.name
         if src.resolve() != dest.resolve():
-            dest.write_bytes(src.read_bytes())
+            try:
+                dest.write_bytes(src.read_bytes())
+            except Exception as e:
+                QMessageBox.critical(self, "Import failed", f"Could not copy the file:\n\n{e}")
+                return
 
         df = self._load_and_show(dest, dest.name)
         if df is None:
@@ -335,7 +345,15 @@ class MainWindow(QMainWindow):
         # Save to library, same as Streamlit's "Update" button flow
         stats = compute_stats(df)
         test_date = extract_test_date(dest.name)
-        save_run(dest.name, dest.stem, test_date, dest, stats, {}, folder="Uncategorised", db_path=DB_PATH)
+        try:
+            save_run(dest.name, dest.stem, test_date, dest, stats, {}, folder="Uncategorised", db_path=DB_PATH)
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Save failed",
+                f"The file loaded and is showing above, but couldn't be saved "
+                f"to the library:\n\n{e}"
+            )
+            return
         self._refresh_library(search_text=self.search_box.text().strip())
         self.statusBar().showMessage(f"Imported and saved: {dest.name}", 5000)
 
@@ -418,8 +436,15 @@ class MainWindow(QMainWindow):
         has its own Save button since it did in the original too."""
         if not self.current_filename:
             return
-        update_init_params(self.current_filename, self.initial_params_tab.get_values(), db_path=DB_PATH)
-        update_result_params(self.current_filename, self.results_tab.get_values(), db_path=DB_PATH)
+        try:
+            update_init_params(self.current_filename, self.initial_params_tab.get_values(), db_path=DB_PATH)
+            update_result_params(self.current_filename, self.results_tab.get_values(), db_path=DB_PATH)
+        except Exception as e:
+            # Without this, a failed write here (locked DB, disk full,
+            # permissions) would raise unhandled in a --windowed build with
+            # no console — the click would just silently do nothing.
+            QMessageBox.critical(self, "Save failed", f"Could not save parameters:\n\n{e}")
+            return
         self.save_status.setText("✅ Saved.")
         self.statusBar().showMessage("Parameters updated.", 4000)
 

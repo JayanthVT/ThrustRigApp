@@ -10,7 +10,7 @@ there's no way for widget state to desync from the underlying list.
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QCheckBox, QHeaderView, QLabel, QAbstractItemView
+    QPushButton, QCheckBox, QHeaderView, QLabel, QAbstractItemView, QMessageBox
 )
 from PyQt6.QtCore import Qt
 
@@ -187,5 +187,9 @@ class TestCheckTab(QWidget):
     def save(self):
         if not self.filename:
             return
-        update_test_param_check(self.filename, self.get_rows(), db_path=self.db_path)
+        try:
+            update_test_param_check(self.filename, self.get_rows(), db_path=self.db_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", f"Could not save:\n\n{e}")
+            return
         self.status_label.setText("✅ Test Parameter Check saved.")
