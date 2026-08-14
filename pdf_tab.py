@@ -94,7 +94,7 @@ class PdfTab(QWidget):
         root.addWidget(self.status_label)
 
         self.preview = QWebEngineView()
-        self.preview.setMinimumHeight(600)
+        self.preview.setMinimumHeight(350)
         root.addWidget(self.preview, stretch=1)
         self._show_placeholder()
 

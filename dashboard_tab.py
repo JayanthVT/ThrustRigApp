@@ -92,7 +92,7 @@ class DashboardTab(QWidget):
         # always present, so this is what actually renders in practice.
         # Plot Builder, for anything more flexible, lives in its own tab.)
         self.plot_view = QWebEngineView()
-        self.plot_view.setMinimumHeight(380)
+        self.plot_view.setMinimumHeight(280)
         root.addWidget(self.plot_view)
 
         self.chart_status = QLabel("")

@@ -123,7 +123,7 @@ class PlotsTab(QWidget):
 
         # ── Plot ──
         self.plot_view = QWebEngineView()
-        self.plot_view.setMinimumHeight(480)
+        self.plot_view.setMinimumHeight(320)
         root.addWidget(self.plot_view)
 
         self.caption = QLabel("")

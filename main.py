@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QMessageBox, QSplitter, QLineEdit, QMenu, QInputDialog
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtGui import QIcon, QPixmap, QFont
 
 from python_functions.db import (
     init_db, fetch_all_runs, fetch_run, save_run, update_init_params,
@@ -103,7 +103,19 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Thrust Test Rig Dashboard")
-        self.resize(1280, 820)
+        # Clamp the initial size to whatever's actually available on this
+        # screen (accounts for taskbar, smaller/scaled displays) instead of
+        # blindly requesting a fixed 1280x820 that can exceed what's
+        # actually visible — that mismatch is what produces the
+        # "Unable to set geometry ... Resulting geometry: ..." warning on
+        # launch on some displays.
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        target_w, target_h = 1280, 820
+        if avail is not None:
+            target_w = min(target_w, avail.width())
+            target_h = min(target_h, avail.height())
+        self.resize(target_w, target_h)
         self.setStyleSheet(DARK_QSS)
         if ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(ICON_PATH)))
@@ -139,7 +151,13 @@ class MainWindow(QMainWindow):
         self.import_btn.clicked.connect(self.import_log)
         sv.addWidget(self.import_btn)
 
-        sv.addWidget(QLabel("Library"))
+        library_header = QHBoxLayout()
+        library_header.addWidget(QLabel("Library"))
+        self.library_count_label = QLabel("")
+        self.library_count_label.setStyleSheet("color:#6b7280; font-size:11px;")
+        library_header.addWidget(self.library_count_label)
+        library_header.addStretch()
+        sv.addLayout(library_header)
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("🔍 Search logs…")
         self.search_box.textChanged.connect(self._on_search_changed)
@@ -179,8 +197,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.results_tab, "📈 Results")
         self.tabs.addTab(self.test_check_tab, "✅ Checklist")
         self.tabs.addTab(self.debug_data_tab, "📋 Raw Data Table")
-        self.tabs.addTab(self.plots_tab, "📉")
-        self.tabs.addTab(self.measurable_tab, "📐")
+        plots_idx = self.tabs.addTab(self.plots_tab, "📉")
+        self.tabs.setTabToolTip(plots_idx, "Plot Builder")
+        measurable_idx = self.tabs.addTab(self.measurable_tab, "📐")
+        self.tabs.setTabToolTip(measurable_idx, "Measurable Params")
         self.tabs.addTab(self.pdf_tab, "📄 PDF Report")
 
         main_v.addWidget(self.tabs, stretch=1)
@@ -213,6 +233,8 @@ class MainWindow(QMainWindow):
     def _refresh_library(self, search_text: str = ""):
         self.library_list.clear()
         runs = fetch_all_runs(search_text=search_text, db_path=DB_PATH)
+        total = len(fetch_all_runs(db_path=DB_PATH))
+        self.library_count_label.setText(f"({total})" if total else "")
         if not runs:
             msg = "No runs match your search." if search_text else "No saved runs yet."
             item = QListWidgetItem(msg)
@@ -502,6 +524,13 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    # Gives Qt an explicit, valid base font with a real point size before any
+    # of our px-based QSS applies. Every font-size rule in this app's
+    # stylesheets uses px, and with no app-wide font ever set otherwise, Qt
+    # can end up internally deriving a point size of -1 for certain widgets
+    # on some Windows/DPI configurations, which triggers a harmless but
+    # noisy "QFont::setPointSize: Point size <= 0 (-1)" console warning.
+    app.setFont(QFont("Segoe UI", 10))
     if ICON_PATH.exists():
         app.setWindowIcon(QIcon(str(ICON_PATH)))
     win = MainWindow()

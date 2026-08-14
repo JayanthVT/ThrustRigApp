@@ -1,6 +1,0 @@
-dist/
-build/
-__pycache__/
-*.pyc
-logs/
-thrust_logs.db
